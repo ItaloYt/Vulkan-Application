@@ -51,12 +51,15 @@ void vulkan_destroy(Vulkan *self) {
 
     if (self->device != NULL) (void) vkDeviceWaitIdle(self->device);
     
-    vulkan_destroy_memory_offsets(self);
+    free(self->objects);
+    free(self->index_count);
+    free(self->index_offsets);
+    free(self->mesh_offsets);
     vulkan_destroy_memories(self);
     vulkan_destroy_buffers(self);
     vulkan_destroy_fences(self);
     vulkan_destroy_semaphores(self);
-    vulkan_destroy_command_buffers(self);
+    free(self->command_buffers);
     vulkan_destroy_command_pools(self);
     vulkan_destroy_pipelines(self);
     vulkan_destroy_framebuffers(self);
@@ -76,21 +79,23 @@ void vulkan_destroy(Vulkan *self) {
 VulkanCode vulkan_render(Vulkan *self, Window *window) {
     assert(self != NULL);
     
-    VkResult result = vkGetFenceStatus(self->device, self->fences[VULKAN_FENCE_FRAME_ENDED][self->frame_index]);
+    VkResult result = vkGetFenceStatus(self->device, vulkan_get_fences(self, VULKAN_FENCE_FRAME_ENDED)[self->frame_index]);
     if (result == VK_NOT_READY) goto _next_frame;
     if (vulkan_throw_api(result)) return VULKAN_CODE_GET_FENCE_STATUS_ERROR;
 
     if (self->should_resize && vulkan_throw(vulkan_resize_swapchain(self, window))) return VULKAN_CODE_RESIZE_SWAPCHAIN_ERROR;
 
     unsigned image_index;
-    result = vkAcquireNextImageKHR(self->device, self->swapchain, -1, self->semaphores[VULKAN_SEMAPHORE_IMAGE_AVAILABLE][self->frame_index], NULL, &image_index);
+    result = vkAcquireNextImageKHR(self->device, self->swapchain, -1, vulkan_get_semaphores(self, VULKAN_SEMAPHORE_IMAGE_AVAILABLE)[self->frame_index], NULL, &image_index);
 
     if (result == VK_SUBOPTIMAL_KHR || result == VK_ERROR_OUT_OF_DATE_KHR) return vulkan_resize_swapchain(self, window);
     if (vulkan_throw_api(result)) return VULKAN_CODE_ACQUIRE_NEXT_IMAGE_ERROR;
 
-    if (vulkan_throw_api(vkResetFences(self->device, 1, self->fences[VULKAN_FENCE_FRAME_ENDED] + self->frame_index))) return VULKAN_CODE_RESET_FENCES_ERROR;
+    if (vulkan_throw_api(vkResetFences(self->device, vulkan_get_fences_count(self)[VULKAN_FENCE_FRAME_ENDED], vulkan_get_fences(self, VULKAN_FENCE_FRAME_ENDED) + self->frame_index))) return VULKAN_CODE_RESET_FENCES_ERROR;
 
-    const VkCommandBuffer cmd = self->command_buffers[VULKAN_COMMAND_POOL_GRAPHIC][VULKAN_GRAPHIC_COMMAND_DRAW];
+    const VkCommandBuffer cmd = vulkan_get_command_buffers(self, VULKAN_GRAPHIC_COMMAND_DRAW)[self->frame_index];
+
+    if (vulkan_throw_api(vkResetCommandBuffer(cmd, 0))) return VULKAN_CODE_RESET_COMMAND_BUFFER_ERROR;
 
     VkCommandBufferBeginInfo begin_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -110,24 +115,24 @@ VulkanCode vulkan_render(Vulkan *self, Window *window) {
             .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
             .pNext = NULL,
             .waitSemaphoreCount = 1,
-            .pWaitSemaphores = self->semaphores[VULKAN_SEMAPHORE_IMAGE_AVAILABLE] + self->frame_index,
+            .pWaitSemaphores = vulkan_get_semaphores(self, VULKAN_SEMAPHORE_IMAGE_AVAILABLE) + self->frame_index,
             .pWaitDstStageMask = (VkPipelineStageFlags[]) {
                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
             },
             .commandBufferCount = 1,
-            .pCommandBuffers = self->command_buffers[VULKAN_COMMAND_POOL_GRAPHIC] + VULKAN_GRAPHIC_COMMAND_DRAW,
+            .pCommandBuffers = (VkCommandBuffer[]) { cmd },
             .signalSemaphoreCount = 1,
-            .pSignalSemaphores = self->semaphores[VULKAN_SEMAPHORE_RENDER_FINISHED] + image_index + self->frame_index * self->image_count,
+            .pSignalSemaphores = vulkan_get_semaphores(self, VULKAN_SEMAPHORE_RENDER_FINISHED) + (image_index + self->frame_index * self->image_count),
         },
     };
 
-    if (vulkan_throw_api(vkQueueSubmit(self->queues[VULKAN_QUEUE_GRAPHIC], 1, submit_infos, self->fences[VULKAN_FENCE_FRAME_ENDED][self->frame_index]))) return VULKAN_CODE_SUBMIT_QUEUE_ERROR;
+    if (vulkan_throw_api(vkQueueSubmit(self->queues[VULKAN_QUEUE_GRAPHIC], 1, submit_infos, vulkan_get_fences(self, VULKAN_FENCE_FRAME_ENDED)[self->frame_index]))) return VULKAN_CODE_SUBMIT_QUEUE_ERROR;
 
     VkPresentInfoKHR present_info = {
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .pNext = NULL,
         .waitSemaphoreCount = 1,
-        .pWaitSemaphores = self->semaphores[VULKAN_SEMAPHORE_RENDER_FINISHED] + image_index + self->frame_index * self->image_count,
+        .pWaitSemaphores = vulkan_get_semaphores(self, VULKAN_SEMAPHORE_RENDER_FINISHED) + (image_index + self->frame_index * self->image_count),
         .swapchainCount = 1,
         .pSwapchains = (VkSwapchainKHR[]) {
             self->swapchain,
@@ -149,16 +154,76 @@ _next_frame:
 }
 
 VulkanCode vulkan_bind_mesh(Vulkan *self, const VulkanMeshInfo *mesh_info) {
-    VulkanCode code = vulkan_create_mesh_buffer(self, mesh_info);
+    VulkanCode code = vulkan_create_mesh_buffers(self, mesh_info);
     if (code != VULKAN_CODE_SUCCESS) return code;
 
-    code = vulkan_create_mesh_memory(self);
+    code = vulkan_create_buffers_memory(self, (unsigned[VULKAN_MESH_BUFFER_COUNT]) { VULKAN_MESH_BUFFER_VERTEX, VULKAN_MESH_BUFFER_INDEX }, VULKAN_MESH_BUFFER_COUNT, VULKAN_MEMORY_MESH, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (code != VULKAN_CODE_SUCCESS) return code;
+
+    code = vulkan_create_buffers_memory(self, (unsigned[VULKAN_MESH_BUFFER_COUNT]) { VULKAN_TEMP_BUFFER_STAGE_VERTEX, VULKAN_TEMP_BUFFER_STAGE_INDEX }, VULKAN_TEMP_BUFFER_COUNT, VULKAN_MEMORY_TEMP, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     if (code != VULKAN_CODE_SUCCESS) return code;
 
     code = vulkan_map_mesh(self, mesh_info);
     if (code != VULKAN_CODE_SUCCESS) return code;
+
+    self->mesh_count = mesh_info->count;
+
+    vkFreeMemory(self->device, self->memories[VULKAN_MEMORY_TEMP], NULL);
+    self->memories[VULKAN_MEMORY_TEMP] = NULL;
+
+    vkDestroyBuffer(self->device, self->buffers[VULKAN_TEMP_BUFFER_STAGE_INDEX], NULL);
+    self->buffers[VULKAN_TEMP_BUFFER_STAGE_INDEX] = NULL;
+
+    vkDestroyBuffer(self->device, self->buffers[VULKAN_TEMP_BUFFER_STAGE_VERTEX], NULL);
+    self->buffers[VULKAN_TEMP_BUFFER_STAGE_VERTEX] = NULL;
     
     return VULKAN_CODE_SUCCESS;
+}
+
+VulkanCode vulkan_bind_objects(Vulkan *self, const VulkanObjectsInfo *info) {
+    assert(self != NULL);
+    assert(info != NULL);
+
+    self->objects = calloc(info->count, sizeof(VulkanObject));
+    if (self->objects == NULL) return VULKAN_CODE_ALLOCATE_ERROR;
+
+    for (int i = 0; i < info->count; ++i) {
+        assert(info->pipelines[i] < VULKAN_PIPELINE_COUNT);
+        assert(info->meshes[i] < self->mesh_count);
+
+        self->object_count[info->pipelines[i]]++;
+    }
+
+    int offsets[VULKAN_PIPELINE_COUNT];
+    (void) memset(offsets, 0, VULKAN_PIPELINE_COUNT * sizeof(int));
+
+    for (int i = 0; i < info->count; ++i) {
+        VulkanObject *obj = vulkan_get_objects(self, info->pipelines[i]) + offsets[info->pipelines[i]];
+        obj->mesh = info->meshes[i];
+
+        offsets[info->pipelines[i]]++;
+    }
+
+    return VULKAN_CODE_SUCCESS;
+}
+
+VulkanObject *vulkan_get_objects(Vulkan *self, unsigned pipeline) {
+    assert(self != NULL);
+    assert(pipeline < VULKAN_PIPELINE_COUNT);
+
+    static unsigned offsets[VULKAN_PIPELINE_COUNT] = {
+        0,
+    };
+
+    static bool cached = false;
+    if (cached) return self->objects + offsets[pipeline];
+
+    for (int i = 1; i < VULKAN_PIPELINE_COUNT; ++i) {
+        offsets[i] += offsets[i - 1] + self->object_count[i - 1];
+    }
+
+    cached = true;
+    return self->objects + offsets[pipeline];
 }
 
 bool vulkan_throw(VulkanCode code) {
@@ -327,8 +392,8 @@ bool vulkan_throw(VulkanCode code) {
             return true;
         }
 
-        case VULKAN_CODE_CREATE_MESH_BUFFER_ERROR: {
-            (void) fprintf(stderr, "Vulkan Error: Failed to create mesh buffer\n");
+        case VULKAN_CODE_CREATE_BUFFER_ERROR: {
+            (void) fprintf(stderr, "Vulkan Error: Failed to create buffer\n");
             return true;
         }
 
@@ -349,6 +414,16 @@ bool vulkan_throw(VulkanCode code) {
 
         case VULKAN_CODE_MAP_MEMORY_ERROR: {
             (void) fprintf(stderr, "Vulkan Error: Failed to map memory\n");
+            return true;
+        }
+
+        case VULKAN_CODE_RESET_COMMAND_BUFFER_ERROR: {
+            (void) fprintf(stderr, "Vulkan Error: Failed to reset command buffer\n");
+            return true;
+        }
+
+        case VULKAN_CODE_WAIT_QUEUE_ERROR: {
+            (void) fprintf(stderr, "Vulkan Error: Failed to wait queue\n");
             return true;
         }
     }

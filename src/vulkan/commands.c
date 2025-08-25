@@ -5,13 +5,13 @@
 void vulkan_draw_base_ui(Vulkan *self, unsigned image_index) {
     assert(self != NULL);
 
-    const VkCommandBuffer cmd = self->command_buffers[VULKAN_COMMAND_POOL_GRAPHIC][VULKAN_GRAPHIC_COMMAND_DRAW];
+    const VkCommandBuffer cmd = vulkan_get_command_buffers(self, VULKAN_GRAPHIC_COMMAND_DRAW)[self->frame_index];
 
     VkRenderPassBeginInfo begin_info = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .pNext = NULL,
         .renderPass = self->render_passes[VULKAN_RENDER_PASS_BASE_UI],
-        .framebuffer = self->framebuffers[VULKAN_RENDER_PASS_BASE_UI][image_index],
+        .framebuffer = vulkan_get_framebuffers(self, VULKAN_RENDER_PASS_BASE_UI)[image_index],
         .renderArea = {
             .offset = { .x = 0, .y = 0, },
             .extent = *self->extent,
@@ -42,9 +42,14 @@ void vulkan_draw_base_ui(Vulkan *self, unsigned image_index) {
         },
     });
 
-    vkCmdBindVertexBuffers(cmd, 0, 1, self->buffers + VULKAN_BUFFERS_MESH, (VkDeviceSize[]) { 0 });
+    VulkanObject *objs = vulkan_get_objects(self, VULKAN_PIPELINE_BASE_UI);
 
-    vkCmdDraw(cmd, 3, 1, 0, 0);
+    for (int i = 0; i < self->object_count[VULKAN_PIPELINE_BASE_UI]; ++i) {
+        vkCmdBindVertexBuffers(cmd, 0, 1, self->buffers + VULKAN_MESH_BUFFER_VERTEX, (VkDeviceSize[]) { self->mesh_offsets[objs[i].mesh] });
+        vkCmdBindIndexBuffer(cmd, self->buffers[VULKAN_MESH_BUFFER_INDEX], self->index_offsets[objs[i].mesh], VK_INDEX_TYPE_UINT32);
+
+        vkCmdDrawIndexed(cmd, self->index_count[objs[i].mesh], 1, 0, 0, 0);
+    }
 
     vkCmdEndRenderPass(cmd);
 }

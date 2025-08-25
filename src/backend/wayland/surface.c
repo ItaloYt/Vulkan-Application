@@ -100,6 +100,4 @@ static void ping(Window *self, WlXdgBase xdg_base, unsigned serial) {
     WaylandBackend *const backend = self->backend;
 
     wl_pong_xdg_base(&backend->loader, xdg_base, serial);
-
-    (void) printf("Pong\n");
 }

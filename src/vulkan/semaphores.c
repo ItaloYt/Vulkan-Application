@@ -3,10 +3,18 @@
 
 #include "core/vulkan.h"
 
-static const unsigned *get_semaphore_counts(Vulkan *self);
-
 VulkanCode vulkan_create_semaphores(Vulkan *self) {
     assert(self != NULL);
+
+    const unsigned *count = vulkan_get_semaphores_count(self);
+
+    int total = 0;
+    for (int i = 0; i < VULKAN_SEMAPHORE_COUNT; ++i) {
+        total += count[i];
+    }
+
+    self->semaphores = calloc(total, sizeof(VkSemaphore));
+    if (self->semaphores == NULL) return VULKAN_CODE_ALLOCATE_ERROR;
 
     VkSemaphoreCreateInfo infos[VULKAN_SEMAPHORE_COUNT] = {
         // VULKAN_SEMAPHORE_IMAGE_AVAILABLE
@@ -23,14 +31,9 @@ VulkanCode vulkan_create_semaphores(Vulkan *self) {
         },
     };
 
-    const unsigned *counts = get_semaphore_counts(self);
-
-    for (int i = 0; i < VULKAN_SEMAPHORE_COUNT; ++i) {
-        self->semaphores[i] = calloc(counts[i], sizeof(VkSemaphore));
-        if (self->semaphores[i] == NULL) return VULKAN_CODE_ALLOCATE_ERROR;
-
-        for (int ii = 0; ii < counts[i]; ++ii) {
-            if (vulkan_throw_api(vkCreateSemaphore(self->device, infos + i, NULL, self->semaphores[i] + ii))) return VULKAN_CODE_CREATE_SEMAPHORES_ERROR;
+    for (int i = 0, offset = 0; i < VULKAN_SEMAPHORE_COUNT; ++i) {
+        for (int ii = 0; ii < count[i]; ++ii, ++offset) {
+            if (vulkan_throw_api(vkCreateSemaphore(self->device, infos + i, NULL, self->semaphores + offset))) return VULKAN_CODE_CREATE_SEMAPHORES_ERROR;
         }
     }
 
@@ -40,20 +43,42 @@ VulkanCode vulkan_create_semaphores(Vulkan *self) {
 void vulkan_destroy_semaphores(Vulkan *self) {
     assert(self != NULL);
 
-    const unsigned *counts = get_semaphore_counts(self);
+    if (self->semaphores == NULL) return;
 
-    for (int i = 0; i < VULKAN_SEMAPHORE_COUNT; ++i) {
-        if (self->semaphores[i] == NULL) continue;
+    const unsigned *count = vulkan_get_semaphores_count(self);
 
-        for (int ii = 0; ii < counts[i]; ++ii) {
-            vkDestroySemaphore(self->device, self->semaphores[i][ii], NULL);
+    for (int i = 0, offset = 0; i < VULKAN_SEMAPHORE_COUNT; ++i) {
+        for (int ii = 0; ii < count[i]; ++ii, ++offset) {
+            vkDestroySemaphore(self->device, self->semaphores[offset], NULL);
         }
-
-        free(self->semaphores[i]);
     }
+
+    free(self->semaphores);
 }
 
-static const unsigned *get_semaphore_counts(Vulkan *self) {
+VkSemaphore *vulkan_get_semaphores(Vulkan *self, unsigned semaphore) {
+    assert(self != NULL);
+    assert(semaphore < VULKAN_SEMAPHORE_COUNT);
+
+    static unsigned offsets[VULKAN_SEMAPHORE_COUNT] = {
+        0,
+    };
+    
+    static bool cached = false;
+
+    if (cached) return self->semaphores + offsets[semaphore];
+
+    const unsigned *count = vulkan_get_semaphores_count(self);
+
+    for (int i = 1; i < VULKAN_SEMAPHORE_COUNT; ++i) {
+        offsets[i] += offsets[0] + count[i - 1];
+    }
+
+    cached = true;
+    return self->semaphores + offsets[semaphore];
+}
+
+const unsigned *vulkan_get_semaphores_count(Vulkan *self) {
     static unsigned counts[VULKAN_SEMAPHORE_COUNT] = {
         VULKAN_FRAMES_IN_FLIGHT,
         VULKAN_FRAMES_IN_FLIGHT,
