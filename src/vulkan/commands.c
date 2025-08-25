@@ -42,6 +42,8 @@ void vulkan_draw_base_ui(Vulkan *self, unsigned image_index) {
         },
     });
 
+    vkCmdBindVertexBuffers(cmd, 0, 1, self->buffers + VULKAN_BUFFERS_MESH, (VkDeviceSize[]) { 0 });
+
     vkCmdDraw(cmd, 3, 1, 0, 0);
 
     vkCmdEndRenderPass(cmd);

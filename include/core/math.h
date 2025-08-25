@@ -1,5 +1,10 @@
 #pragma once
 
+struct Vector2 {
+    float x, y;
+};
+typedef struct Vector2 Vector2;
+
 static inline int math_max_int(int a, int b) {
     return (a > b ? a : b);
 }

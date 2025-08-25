@@ -9,6 +9,7 @@ src := \
 	src/window.c \
 	src/shaders.c \
 	src/vulkan.c \
+	src/vkapp.c \
 	\
 	src/backend/wayland/loader.c \
 	src/backend/wayland/backend.c \
@@ -31,6 +32,10 @@ src := \
 	src/vulkan/semaphores.c \
 	src/vulkan/fences.c \
 	src/vulkan/commands.c \
+	src/vulkan/buffers.c \
+	src/vulkan/memories.c \
+	src/vulkan/maps.c \
+
 
 obj = $(addprefix $(build)/,$(src:.c=.o))
 dep = $(obj:.o=.d)

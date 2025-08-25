@@ -51,6 +51,9 @@ void vulkan_destroy(Vulkan *self) {
 
     if (self->device != NULL) (void) vkDeviceWaitIdle(self->device);
     
+    vulkan_destroy_memory_offsets(self);
+    vulkan_destroy_memories(self);
+    vulkan_destroy_buffers(self);
     vulkan_destroy_fences(self);
     vulkan_destroy_semaphores(self);
     vulkan_destroy_command_buffers(self);
@@ -142,6 +145,19 @@ VulkanCode vulkan_render(Vulkan *self, Window *window) {
 _next_frame:
     self->frame_index = (self->frame_index + 1) % VULKAN_FRAMES_IN_FLIGHT;
 
+    return VULKAN_CODE_SUCCESS;
+}
+
+VulkanCode vulkan_bind_mesh(Vulkan *self, const VulkanMeshInfo *mesh_info) {
+    VulkanCode code = vulkan_create_mesh_buffer(self, mesh_info);
+    if (code != VULKAN_CODE_SUCCESS) return code;
+
+    code = vulkan_create_mesh_memory(self);
+    if (code != VULKAN_CODE_SUCCESS) return code;
+
+    code = vulkan_map_mesh(self, mesh_info);
+    if (code != VULKAN_CODE_SUCCESS) return code;
+    
     return VULKAN_CODE_SUCCESS;
 }
 
@@ -308,6 +324,31 @@ bool vulkan_throw(VulkanCode code) {
 
         case VULKAN_CODE_PRESENT_QUEUE_ERROR: {
             (void) fprintf(stderr, "Vulkan Error: Failed to present queue\n");
+            return true;
+        }
+
+        case VULKAN_CODE_CREATE_MESH_BUFFER_ERROR: {
+            (void) fprintf(stderr, "Vulkan Error: Failed to create mesh buffer\n");
+            return true;
+        }
+
+        case VULKAN_CODE_NO_MEMORY_TYPE_ERROR: {
+            (void) fprintf(stderr, "Vulkan Error: No suitable memory type\n");
+            return true;
+        }
+
+        case VULKAN_CODE_CREATE_MEMORY_ERROR: {
+            (void) fprintf(stderr, "Vulkan Error: Failed to create device memory\n");
+            return true;
+        }
+
+        case VULKAN_CODE_BIND_BUFFER_MEMORY_ERROR: {
+            (void) fprintf(stderr, "Vulkan Error: Failed to bind buffer memory\n");
+            return true;
+        }
+
+        case VULKAN_CODE_MAP_MEMORY_ERROR: {
+            (void) fprintf(stderr, "Vulkan Error: Failed to map memory\n");
             return true;
         }
     }

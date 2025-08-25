@@ -2,6 +2,7 @@
 
 #include "core/vulkan.h"
 #include "core/shaders.h"
+#include "core/math.h"
 
 VulkanCode vulkan_create_pipelines(Vulkan *self) {
     assert(self != NULL);
@@ -37,10 +38,23 @@ VulkanCode vulkan_create_pipelines(Vulkan *self) {
                 .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
                 .pNext = NULL,
                 .flags = 0,
-                .vertexBindingDescriptionCount = 0,
-                .pVertexBindingDescriptions = NULL,
-                .vertexAttributeDescriptionCount = 0,
-                .pVertexAttributeDescriptions = NULL,
+                .vertexBindingDescriptionCount = 1,
+                .pVertexBindingDescriptions = (VkVertexInputBindingDescription[]) {
+                    (VkVertexInputBindingDescription) {
+                        .binding = 0,
+                        .stride = sizeof(Vector2),
+                        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+                    },
+                },
+                .vertexAttributeDescriptionCount = 1,
+                .pVertexAttributeDescriptions = (VkVertexInputAttributeDescription[]) {
+                    (VkVertexInputAttributeDescription) {
+                        .location = 0,
+                        .binding = 0,
+                        .format = VK_FORMAT_R32G32_SFLOAT,
+                        .offset = 0,
+                    },
+                },
             },
             .pInputAssemblyState = &(VkPipelineInputAssemblyStateCreateInfo) {
                 .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,

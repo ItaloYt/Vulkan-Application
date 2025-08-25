@@ -34,6 +34,13 @@ enum {
     VULKAN_FENCE_FRAME_ENDED = 0,
     VULKAN_FENCE_COUNT,
 
+    VULKAN_BUFFERS_MESH = 0,
+    VULKAN_BUFFERS_INDEX,
+    VULKAN_BUFFERS_COUNT,
+
+    VULKAN_MEMORIES_MESH = 0,
+    VULKAN_MEMORIES_COUNT,
+
     VULKAN_FRAMES_IN_FLIGHT = 1,
 };
 
@@ -57,6 +64,11 @@ struct Vulkan {
     VkSemaphore *semaphores[VULKAN_SEMAPHORE_COUNT];
     VkFence *fences[VULKAN_FENCE_COUNT];
 
+    VkBuffer buffers[VULKAN_BUFFERS_COUNT];
+    VkDeviceMemory memories[VULKAN_MEMORIES_COUNT];
+    unsigned buffer_sizes[VULKAN_BUFFERS_COUNT];
+    unsigned *memory_offsets[VULKAN_MEMORIES_COUNT];
+
     VkExtent2D *extent;
     VkImage *images;
     VkImageView *views;
@@ -73,6 +85,13 @@ struct Vulkan {
 
     bool should_resize;
 };
+
+struct VulkanMeshInfo {
+    const void *const *meshes;
+    const unsigned *mesh_sizes;
+    const unsigned mesh_count;
+};
+typedef struct VulkanMeshInfo VulkanMeshInfo;
 
 enum VulkanCode {
     VULKAN_CODE_SUCCESS = 0,
@@ -108,11 +127,17 @@ enum VulkanCode {
     VULKAN_CODE_END_COMMAND_BUFFER_ERROR,
     VULKAN_CODE_SUBMIT_QUEUE_ERROR,
     VULKAN_CODE_PRESENT_QUEUE_ERROR,
+    VULKAN_CODE_CREATE_MESH_BUFFER_ERROR,
+    VULKAN_CODE_NO_MEMORY_TYPE_ERROR,
+    VULKAN_CODE_CREATE_MEMORY_ERROR,
+    VULKAN_CODE_BIND_BUFFER_MEMORY_ERROR,
+    VULKAN_CODE_MAP_MEMORY_ERROR,
 };
 typedef enum VulkanCode VulkanCode;
 
 VulkanCode vulkan_init(Vulkan *self, Window *window);
 VulkanCode vulkan_render(Vulkan *self, Window *window);
+VulkanCode vulkan_bind_mesh(Vulkan *self, const VulkanMeshInfo *info);
 void vulkan_destroy(Vulkan *self);
 
 VulkanCode vulkan_create_instance(Vulkan *self, Window *window);
@@ -143,6 +168,12 @@ VulkanCode vulkan_create_semaphores(Vulkan *self);
 void vulkan_destroy_semaphores(Vulkan *self);
 VulkanCode vulkan_create_fences(Vulkan *self);
 void vulkan_destroy_fences(Vulkan *self);
+VulkanCode vulkan_create_mesh_buffer(Vulkan *self, const VulkanMeshInfo *mesh_info);
+void vulkan_destroy_buffers(Vulkan *self);
+VulkanCode vulkan_create_mesh_memory(Vulkan *self);
+void vulkan_destroy_memories(Vulkan *self);
+VulkanCode vulkan_map_mesh(Vulkan *self, const VulkanMeshInfo *mesh_info);
+void vulkan_destroy_memory_offsets(Vulkan *self);
 
 void vulkan_draw_base_ui(Vulkan *self, unsigned image_index);
 

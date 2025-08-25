@@ -1,7 +1,4 @@
-// #include <time.h>
-
-#include "core/window.h"
-#include "core/vulkan.h"
+#include "core/vkapp.h"
 
 int main(void) {
     // clock_t t0 = clock();
@@ -17,6 +14,17 @@ int main(void) {
 
     Vulkan vulkan = {0};
     if (vulkan_throw(vulkan_init(&vulkan, window))) {
+        window->destroy(window);
+
+        return 1;
+    }
+
+    if (vulkan_throw(vulkan_bind_mesh(&vulkan, &(VulkanMeshInfo) {
+        .meshes = vkapp_get_meshes(),
+        .mesh_sizes = vkapp_get_mesh_sizes(),
+        .mesh_count = VKAPP_MESHES_COUNT,
+    }))) {
+        vulkan_destroy(&vulkan);
         window->destroy(window);
 
         return 1;
